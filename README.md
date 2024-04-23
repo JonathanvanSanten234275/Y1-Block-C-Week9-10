@@ -1,3 +1,3 @@
-App.py for Flask-API server using Whisper Larve V3 to transcibe audio files.
-Main.py for audio input uses API for input transcription.
-Dockerfile still experimental
+- App.py for Flask-API server using Whisper Larve V3 to transcibe audio files.
+- Main.py for audio input uses API for input transcription.
+- Dockerfile still experimental
