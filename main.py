@@ -1,10 +1,14 @@
 import pyaudio
 import wave
+import json
 import math
 import struct
 import requests
+import asyncio
+from ollama import AsyncClient
 
 turn = 0
+verification = False
 
 def list_devices():
     p = pyaudio.PyAudio()
@@ -93,20 +97,26 @@ def transcribe_audio(url, audio_file_path):
         response = requests.post(url, files=files)
         response.raise_for_status()  # Raises an HTTPError for bad responses
         # Print or process the transcription response here
-        print(response.text)
     except requests.exceptions.HTTPError as err:
         print(f"HTTP error occurred: {err}")
     except Exception as err:
         print(f"Other error occurred: {err}")
     finally:
         files['file'].close()
+    return response.text
 
-def verify_output():
+def verify_input():
     verification = str(input("Is this transcription correct? Y/N\n"))
     if verification == "Y" or 'y':
         return True
     else:
         return False
+    
+async def chat(prompt):
+  message = {'role': 'user', 'content': prompt}
+  async for part in await AsyncClient().chat(model='llama3', messages=[message], stream=True):
+    print(part['message']['content'], end='', flush=True)
+
 
 while __name__ == '__main__':
     if turn == 0:
@@ -114,10 +124,10 @@ while __name__ == '__main__':
         list_devices()
         device_index = int(input("Choose a device index: "))
 
-    record_audio()
-    transcribe_audio('http://127.0.0.1:5000', 'input.wav')
-    verification = verify_output()
-    if verification == False:
+    while verification==False:
         record_audio()
-    else:
-        continue
+        llm_input = transcribe_audio('http://127.0.0.1:5000', 'input.wav')
+        print(llm_input)
+        verification = verify_input()
+
+    asyncio.run(chat(llm_input))
