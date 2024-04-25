@@ -1,11 +1,11 @@
 import pyaudio
 import wave
-import json
 import math
 import struct
 import requests
 import asyncio
 from ollama import AsyncClient
+from playsound import playsound
 
 turn = 0
 verification = False
@@ -112,13 +112,82 @@ def verify_input():
     else:
         return False
     
-async def chat(prompt):
-  message = {'role': 'user', 'content': prompt}
-  async for part in await AsyncClient().chat(model='llama3', messages=[message], stream=True):
-    print(part['message']['content'], end='', flush=True)
+
+async def get_llm_response(prompt, queue):
+    message = {'role': 'user', 'content': prompt}
+    async for part in await AsyncClient().chat('llama3', [message], True):
+        await queue.put(part['message']['content'])
+    await queue.put(None)
+
+
+async def text_to_speech(sentence):
+    print(f"Sending to text-to-speech: {sentence}")
+    #response = requests.post("http://127.0.0.1:7860/run/generate", json={
+    #	"data": [
+    #		sentence,
+    #		"\n",
+    #		"None",
+    #		"",
+    #		"Keanu Reeves",
+    #		{"name":"audio.wav","data":"data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="},
+    #		0,
+    #		1,
+    #		1,
+    #		2,
+    #		40,
+    #		0.8,
+    #		"P",
+    #		8,
+    #		0,
+    #		0.8,
+    #		1,
+    #		1,
+    #		8,
+    #		2,
+    #		["Conditioning-Free"],
+    #		False,
+    #		False,
+    #	]
+    #}).json()
+
+    #file_loc = (response["data"][0]['name']) + ".wav"
+    #print(file_loc)
+    #playsound(file_loc)
+
+async def consume_response(queue):
+    sentence_parts = []  # Array to store parts of the sentence
+    while True:
+        response_part = await queue.get()
+        if response_part is None:
+            if sentence_parts:
+                # If there are any remaining parts in the list, process them
+                final_sentence = ''.join(sentence_parts)
+                await text_to_speech(final_sentence)
+            queue.task_done()
+            break
+        
+        # Only proceed if response_part is not empty
+        if response_part:
+            sentence_parts.append(response_part)  # Add part to the list
+            if response_part[-1] in '.?!':  # Check if the last character is a sentence terminator
+                complete_sentence = ''.join(sentence_parts)  # Join parts into a complete sentence
+                await text_to_speech(complete_sentence)  # Send complete sentence to text-to-speech
+                sentence_parts = []  # Reset the parts list for the next sentence
+
+        queue.task_done()
+
+
+async def main(llm_input):
+    queue = asyncio.Queue()
+    producer = asyncio.create_task(get_llm_response(llm_input, queue))
+    consumer = asyncio.create_task(consume_response(queue))
+    await asyncio.gather(producer, consumer)
+
 
 
 while __name__ == '__main__':
+    verification=False
+
     if turn == 0:
         print("\nAvailable devices:")
         list_devices()
@@ -129,5 +198,8 @@ while __name__ == '__main__':
         llm_input = transcribe_audio('http://127.0.0.1:5000', 'input.wav')
         print(llm_input)
         verification = verify_input()
+        if verification==False:
+            break
+        else:
+            asyncio.run(main(llm_input))
 
-    asyncio.run(chat(llm_input))
